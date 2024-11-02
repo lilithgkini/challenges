@@ -2,6 +2,7 @@ Let's start by running the `file` command on the binary.
 ![](attachments/20241031193811.png)
 
 As we can see it's a 64bit ELF, stripped binary, which means no symbols.
+
 ![](attachments/20241031193840.png)
 
 Using checksec on the binary we can see that the there is a stack canary present and also it's Position Independent Executable.
@@ -14,27 +15,36 @@ Running it we see that it's asking for a size and then for user input of that sp
 We could use Ghidra to decompile the binary and understand how it works, but lets instead use gdb to see it in action and analyze it dynamically. I m using GEF with gdb, plus I set up the $BASE value to make it easier to navigate addresses since the binary is stripped, but you don't have to do any of these. It's just for convenience.
 
 Since the binary is stripped we can't just "break" in main. We have to instead run `start` which places us in the `_start` and from there we can find the address of main.
+
 ![](attachments/20241031194443.png)
+
 In this case its `0x00005555555552fe`.
 
-Fortunately gdb starts the process as if it doesn't have ASLR and therefore the addresses are not randomized. Instead it will use as a base address of whatever you have as your $BASE (you can set it in the .gdbinit file). 
+Fortunately gdb starts the process as if it doesn't have ASLR and therefore the addresses are not randomized. Instead it will use as a base address of whatever you have as your $BASE (you can set it in the .gdbinit file).
+
 ![](attachments/20241031194724.png)
 
 From this we can finally find the address of main and place a breakpoint and "continue".
 `b *0x00005555555552fe`
 
 Since we don't have symbols, we don't have functions and we can't use "disassemble". Instead we can examine the next instructions after the instruction pointer `x/16i $rip`
+
 ![](attachments/20241031194933.png)
 
 The main function is calling another function, `0x5555555551a9`. Setting up a breakpoint and continuing we can examine this new function.
 
 We can see that it uses scanf to get a digit from stdin and then reads that many bytes from user stdin, storing it in `[rbp-0x30]`
+
 ![](attachments/20241031195112.png)
+
 further back we also see when rbp-0x30 was initialized
+
 ![](attachments/20241031200043.png)
+
 which tells us its a 32 byte size buffer.
 
 lets place a breakpoint in that read.
+
 ![](attachments/20241031195303.png)
 
 Examining the stack we see the buffer plus padding, but also we see the canary (The canary is the one that starts with 00 in the least significant byte), the stack base pointer (rbp) and the return address to main.
@@ -62,6 +72,7 @@ Looking more into the assembly we see that the program calls `strstr` with some 
 
 
 Examining the string we see that it's the word `BLACKDOOR`.
+
 ![](attachments/20241031200413.png)
 
 If it finds this string in our input then it calls the same function again, allowing us to send more user input and overwrite a new stack frame.
@@ -80,4 +91,5 @@ So, to recap our exploitation plan.
 I wrote a python exploit script using pwntools and a reverse shell shellocde.
 
 ![](attachments/20241031202716.png)
+
 Bam! Reverse shell!!

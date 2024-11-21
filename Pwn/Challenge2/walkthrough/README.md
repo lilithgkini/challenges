@@ -68,7 +68,9 @@ Whats more important though is the `tcache_get` which gets called when we malloc
 It checks if the next entry of the chunk is "aligned" using the `aligned_Ok` macro which bitwise "and" it with the `MALLOC_ALIGN_MASK`.
 
 ![](attachments/20241121150426.png)
+
 ![](attachments/20241121150524.png)
+
 ![](attachments/20241121150546.png)
 
 Looking into that we see that its `MALLOC_ALIGNMENT -1` and from that we see that `MALLOC_ALIGNMENT` is the number 16.

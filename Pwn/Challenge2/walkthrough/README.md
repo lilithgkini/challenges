@@ -6,8 +6,10 @@ We see that PIE is enabled, there's stack canaries and the stack is non executab
 
 RELRO is partial which means we could theoretically overwrite the GOT if we had an appropriate bug...
 
-![[20241121143303.png]]
+![](20241121143303.png)
+
 ![](attachments/20241121143928.png)
+
 But notice how it uses its own glibc. Looking into the library files we see that it's an older version, 2.35.
 
 # Finding the Bug
@@ -54,6 +56,7 @@ If you are familiar with the way ptmalloc works in glibc skip ahead.
 When we call "free" on a chunk, if it's placed on the tcache, ie the tcache bin is not full (up to 7 chunks) and the size doesn't exceed 1030 bytes, it calls the `tcache_put`.
 
 ![](attachments/20241121150228.png)
+
 ![](attachments/20241121150316.png)
 
 Following that, we see that whatever was written in the location pointed to by the pointer returned by malloc, is overwritten by a mangled pointer to the next entry of the tcache, using the `PROTECT_PTR` which mangles it using certain bitwise shifts and xors, the so called Safe Linking.
@@ -207,6 +210,7 @@ We meed to allocate two consecutive chunks, let's say stored in index 0 and 1 of
 That would place the last freed, let's say chunk 0, on the top of the bin. It's next entry is the mangled address of the chunk 1.
 
 ![](attachments/20241121162655.png)
+
 `messages[0]` and `messages[1]` respectively have the freed chunks as mentioned above, alongside their tcache metadata.
 The first chunk has a mangled pointer to the second chunk. The second points to the HEAD.
 
@@ -227,11 +231,13 @@ Lets use GDB for some sleuthing.
 We can easily get the address of the heap chunks from the first *race condition*, as mentioned. But that only gives us access to the current thread's heap and arena.
 
 Taking a look at this heap we find an address to libc.
+
 ![](attachments/20241121163039.png)
 
 The -f20 address ends in a whitespace, '0x20' which is a bad character for scanf and therefore is a bad pick. The e28 is not aligned and would cause a sigabort. That would leave the d40 ,which is great for what we need.
 
 With that address we can calculate the libc base.
+
 ![](attachments/20241121163400.png)
 
 The libc is contiguous in memory with the per thread stack, so having a libc leak means we know also the location of the stack for the current thread.

@@ -6,7 +6,7 @@ We see that PIE is enabled, there's stack canaries and the stack is non executab
 
 RELRO is partial which means we could theoretically overwrite the GOT if we had an appropriate bug...
 
-![](20241121143303.png)
+![](attachments/20241121143303.png)
 
 ![](attachments/20241121143928.png)
 
@@ -15,7 +15,7 @@ But notice how it uses its own glibc. Looking into the library files we see that
 # Finding the Bug
 ![](attachments/20241121144600.png)
 
-Looking into the code we see that it's main is a typical server using multithreading.
+Looking into the code we see that its main is a typical server using multithreading.
 The thread it spawns is using the function `handle_connections` and passes as argument the file descriptor it gets from accepting a connection.
 
 In the function we see that it calls a `challenge` function.
@@ -208,7 +208,7 @@ And in python it translates to what is shown in the screenshot ,give or thake an
 Now with all the math out of the way, what's the plan?
 
 # PLAN
-We meed to allocate two consecutive chunks, let's say stored in index 0 and 1 of the "messages" and then free them in reverse order.
+We need to allocate two consecutive chunks, let's say stored in index 0 and 1 of the "messages" and then free them in reverse order.
 That would place the last freed, let's say chunk 0, on the top of the bin. It's next entry is the mangled address of the chunk 1.
 
 ![](attachments/20241121162655.png)

@@ -80,7 +80,11 @@ That would make the `aligned_OK` "false" and would fail the assertion.
 What this effectively does is it makes sure our pointer has the least significant nibble (4 bits, aka half a byte) to be 0.
 Any pointer that doesn't end in 0x-0 will fail, ensuring alignment.
 
-If we leak this mangled pointer, we can reverse it using Math and get the pointer that it points to. From there we can calculate the original position of the mangled, cause we know the size of each chunk (0x410 with the metadata) and with that we can craft our own mangled pointers to overwrite the next entry so that when we malloc that free chunk it will poison the tcache next entry, ensuring that, if the bin is still not empty, the new malloc after will have the address pointed to by our mangled value. Assuming we did the math correct and we took into account stack alignment.
+If we leak this mangled pointer, we can reverse it using Math and get the next entry of the tcache bin. From there we can calculate the address of the positional chunk, cause we know the size of each chunk (0x410 with the metadata).
+
+Knowing the addess of each chunk in the heap we can forge own mangled pointers that point to wherever we want, as long as the address follows alignment and poison the tcache next entry.
+
+Poisoning the tcache ensures that, if the bin is still not empty, the new chunk that will be used next time malloc gets used for the particular bin it will get the address that we chose to with our manged pointer, assuming we did the math correct and we took into account stack alignment.
 
 We can deal with safe linking with the following python code
 
@@ -216,7 +220,7 @@ That would place the last freed, let's say chunk 0, on the top of the bin. It's 
 `messages[0]` and `messages[1]` respectively have the freed chunks as mentioned above, alongside their tcache metadata.
 The first chunk has a mangled pointer to the second chunk. The second points to the HEAD.
 
-We need to exploit the *race condition* to leak, using printf, the contents of chunk 0, demangle that value and calculate the address of chunk zero. With this address we can bypass the *safe linking* by mangling any address we want for this particular chunk and poison the tcache next entry, which would follow the demangled address to allocate a chunk next time malloc is called and placing that address in the global array. Then it's only a matter of using printf on it and leak the contents, giving us an arbitrary **read primitive**.
+We need to exploit the *race condition* to leak, using printf, the contents of chunk 0, demangle that value and calculate the address of chunk zero. With this address we can bypass the *safe linking* by mangling any address we want for this particular chunk and poison the tcache next entry, which would follow the demangled address to allocate a chunk next time malloc is called and placing that address in the global array. Then it's only a matter of using printf on it and leak the contents, giving us an **arbitrary read primitive**.
 
 In order to get an **arbitrary write** on any address we follow the same process, only instead of finally using printf, we use scanf.
 
@@ -243,8 +247,9 @@ With that address we can calculate the libc base.
 ![](attachments/20241121163400.png)
 
 The libc is contiguous in memory with the per thread stack, so having a libc leak means we know also the location of the stack for the current thread.
-From there we can leak the stack, but only 8 bytes from an align address, ie Not the return address, since that is always 8 bytes next to stored rbp, which is stack aligned.
-We also can't overwrite the stored rbp to leak the ret next to it because scanf always includes a null terminating byte, so no buffer overreads.
+From there we can leak the stack, but only 8 bytes from an aligned address. That excludes the return address, since that is always 8 bytes after to stored rbp, which is stack aligned.
+
+We could try overwriting the stored rbp which a bunch of As and call printf on it to leak the ret next to it. But scanf append a string terminating byte, so no buffer overreads.
 
 ![](attachments/20241121163540.png)
 
@@ -252,15 +257,16 @@ Using gdb again we see another address in the stack that holds a pointer to the 
 
 ![](attachments/20241121164158.png)
 
-Another way would be to use the "scan" build in command in GEF.
+Another way would be to use the "scan" built-in command in GEF.
 The *haystack* would be the entire memory where the thread stack is and the *needle* would be the entire region where the binary code is, which makes things a lot easier.
 
 ![](attachments/20241121163917.png)
 
-With that we can finally calculate the base address and now we know the location of everything in the binary, the thread heap and stack and libc and we can finally overwrite the return address with a ROP chain, gaining execution flow and ret2libc to execute any command in libc that we want, such as execve with `/bin/bash`.
+With that we can finally calculate the base address and now we know the location of everything in the binary, the thread heap, stack and libc and we can finally overwrite the return address with a ROP chain, gaining execution flow and ret2libc to execute any command in libc that we want, such as execve with `/bin/bash`.
 
-Another thing to note is that the way we input bytes in the binary is scanf, which disregards whitespace characters. That means that all the addresses we work with need to not have whitespace characters. That goes for our ropchain as well.
-To work around this we can use arbitrary write on an address 0x10 before, or overwrite everything in between with padding.
+Another thing to note is that the way we input bytes in the binary is scanf, which stops reading at whitespace characters. That would end up truncating any addresses that include whitespace characters.
+
+To work around this we can use our **arbitrary write** on an address 0x10 bytes before and overwrite everything in between with padding.
 Or we can spawn a new thread and hope the addresses there will be better (but we would need to recalculate the offsets to the thread stack).
 
 In summary.
@@ -271,7 +277,7 @@ What we need to do is abuse the *race condition* to mess about freely with the h
 Develop an **arbitrary read** primitive to leak addresses from the thread's heap and the libc.
 From there we can calculate the thread's stack and leak any value on it, such as an address to the binary.
 
-Then develop an **arbitrary write** primitive and create a ROPchain to execute any command we want from libc by overwriting the return address of the function so that when we provide the "quit" command our ROP gets triggered.
+Then develop an **arbitrary write** primitive, create a ROPchain to execute any command we want from libc (ret2libc) and overwrie the return address of the function so that when we provide the "quit" command our ROP gets triggered.
 
 Using the python script i wrote:
 

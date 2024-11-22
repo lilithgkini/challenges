@@ -15,8 +15,8 @@ But notice how it uses its own glibc. Looking into the library files we see that
 # Finding the Bug
 ![](attachments/20241121144600.png)
 
-Looking into the code we see that its main is a typical server using multithreading.
-The thread it spawns is using the function `handle_connections` and passes as argument the file descriptor it gets from accepting a connection.
+Looking into the code we see that the main is a typical server using multithreading.
+The thread it spawns is using the function `handle_connections` and passes as an argument the file descriptor it gets from accepting a connection.
 
 In the function we see that it calls a `challenge` function.
 
